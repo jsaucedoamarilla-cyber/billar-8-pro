@@ -1,0 +1,104 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar archivos del juego
+        run: |
+          set -e
+          mkdir -p _source _apk/www
+          ZIP_FILE="BILLAR_8_PRO_JUEGO_Y_PANEL_COMPLETO.zip"
+
+          if [ -f "$ZIP_FILE" ]; then
+            unzip -q "$ZIP_FILE" -d _source
+          else
+            cp -a . _source/
+          fi
+
+          GAME_DIR=""
+          if [ -d "_source/JUEGO_BILLAR_8_PRO" ]; then
+            GAME_DIR="_source/JUEGO_BILLAR_8_PRO"
+          elif [ -f "_source/index.html" ]; then
+            GAME_DIR="_source"
+          else
+            INDEX_FILE="$(find _source -type f -iname 'index.html' ! -path '*/admin/*' | head -n 1)"
+            if [ -n "$INDEX_FILE" ]; then
+              GAME_DIR="$(dirname "$INDEX_FILE")"
+            else
+              GAME_HTML="$(find _source -type f \( -iname '*jugar*.html' -o -iname '*billar*.html' \) ! -iname 'admin*' | head -n 1)"
+              if [ -n "$GAME_HTML" ]; then
+                GAME_DIR="$(dirname "$GAME_HTML")"
+              fi
+            fi
+          fi
+
+          if [ -z "$GAME_DIR" ]; then
+            echo "No se encontró el HTML principal del juego dentro del ZIP."
+            echo "Archivos HTML encontrados:"
+            find _source -type f -iname '*.html' -print
+            exit 1
+          fi
+
+          cp -a "$GAME_DIR"/. _apk/www/
+          if [ ! -f "_apk/www/index.html" ]; then
+            MAIN_HTML="$(find _apk/www -maxdepth 1 -type f \( -iname '*jugar*.html' -o -iname '*billar*.html' \) ! -iname 'admin*' | head -n 1)"
+            if [ -z "$MAIN_HTML" ]; then
+              MAIN_HTML="$(find _apk/www -maxdepth 1 -type f -iname '*.html' ! -iname 'admin*' | head -n 1)"
+            fi
+            if [ -z "$MAIN_HTML" ]; then
+              echo "No se encontró una página HTML para iniciar el juego."
+              exit 1
+            fi
+            cp "$MAIN_HTML" _apk/www/index.html
+          fi
+
+          # El panel de administración y las reglas privadas no van dentro del APK.
+          rm -f _apk/www/admin.html _apk/www/reglas_firestore.txt _apk/www/_headers
+          echo "Archivos preparados:"
+          ls -la _apk/www
+          test -s _apk/www/index.html
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Preparar app Android (Capacitor)
+        working-directory: _apk
+        run: |
+          npm init -y >/dev/null
+          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.billar8pro.app",
+            "appName": "Billar 8 Pro",
+            "webDir": "www",
+            "server": { "androidScheme": "https" }
+          }
+          EOF
+          npx cap add android
+          npx cap sync android
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.CAMERA"/><uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/></manifest>#' android/app/src/main/AndroidManifest.xml
+
+      - name: Compilar APK
+        working-directory: _apk/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: billar-8-pro-apk
+          path: _apk/android/app/build/outputs/apk/debug/app-debug.apk
