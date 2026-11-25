@@ -62,7 +62,7 @@ jobs:
           APPV=${APPV:-desconocida}
           echo "VERSIÓN DEL JUEGO EN ESTE APK: $APPV"
           echo "appv=$APPV" >> "$GITHUB_OUTPUT"
-          { echo "### Versión del juego en este APK: `$APPV`"; echo "Fuente: `$SRC`"; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### Versión del juego en este APK: \`$APPV\`"; echo "Fuente: \`$SRC\`"; } >> "$GITHUB_STEP_SUMMARY"
           cd _apk
           npm init -y >/dev/null
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
@@ -102,3 +102,4 @@ jobs:
         with:
           name: billar-8-pro-${{ steps.prep.outputs.appv }}
           path: _apk/android/app/build/outputs/apk/debug/app-debug.apk
+
