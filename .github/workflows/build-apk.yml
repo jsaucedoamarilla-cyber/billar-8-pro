@@ -20,27 +20,34 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Preparar el juego (carpeta, zip o archivos sueltos)
+      - name: Preparar el juego (usa SIEMPRE la versión más nueva)
+        id: prep
         run: |
           mkdir -p _apk/www
+          ver_de() { grep -o "APPV = 'guia-[0-9]*" | head -1 | grep -o '[0-9]*$' || true; }
+          # versión de la carpeta suelta (si existe)
+          FV=-1
+          if [ -f JUEGO_BILLAR_8_PRO/index.html ]; then FV=$(ver_de < JUEGO_BILLAR_8_PRO/index.html); FV=${FV:-0}; fi
+          # versión del mejor zip BILLAR_8_PRO_CORREGIDO*.zip
+          ZV=-1; Z=""
+          for f in BILLAR_8_PRO_CORREGIDO*.zip; do
+            [ -f "$f" ] || continue
+            v=$(unzip -p "$f" '*JUEGO_BILLAR_8_PRO/index.html' 2>/dev/null | ver_de); v=${v:-0}
+            n=$(echo "$f" | sed -n 's/.*(\([0-9][0-9]*\)).*/\1/p'); n=${n:-0}
+            echo "  zip: $f -> versión guia-$v (número $n)"
+            if [ "$v" -gt "$ZV" ] || { [ "$v" -eq "$ZV" ] && [ "$n" -gt "${ZN:--1}" ]; }; then ZV=$v; ZN=$n; Z="$f"; fi
+          done
+          echo "Carpeta JUEGO_BILLAR_8_PRO: guia-$FV | Mejor zip: ${Z:-ninguno} guia-$ZV"
           SRC=""
-          if [ -d JUEGO_BILLAR_8_PRO ]; then
+          if [ -n "$Z" ] && [ "$ZV" -ge "$FV" ]; then
+            echo "Usando zip: $Z"
+            mkdir -p _src && unzip -oq "$Z" -d _src
+            SRC="$(dirname "$(find _src -type f -name index.html -path '*JUEGO_BILLAR_8_PRO*' | head -1)")"
+          elif [ "$FV" -ge 0 ]; then
+            echo "Usando la carpeta JUEGO_BILLAR_8_PRO"
             SRC="JUEGO_BILLAR_8_PRO"
-          else
-            # Usa el zip BILLAR_8_PRO_CORREGIDO con el número más alto, ej. "(4)"
-            Z=""; best=-1
-            for f in BILLAR_8_PRO_CORREGIDO*.zip; do
-              [ -f "$f" ] || continue
-              n=$(echo "$f" | sed -n 's/.*(\([0-9][0-9]*\)).*/\1/p'); n=${n:-0}
-              if [ "$n" -gt "$best" ]; then best=$n; Z="$f"; fi
-            done
-            if [ -n "$Z" ]; then
-              echo "Usando zip: $Z"
-              mkdir -p _src && unzip -oq "$Z" -d _src
-              SRC="$(dirname "$(find _src -type f -name index.html -path '*JUEGO_BILLAR_8_PRO*' | head -1)")"
-            elif [ -f index.html ]; then
-              SRC="."
-            fi
+          elif [ -f index.html ]; then
+            SRC="."
           fi
           if [ -z "$SRC" ] || [ ! -f "$SRC/index.html" ]; then
             echo "::error::No se encontró el juego (index.html). Subí la carpeta JUEGO_BILLAR_8_PRO o el zip BILLAR_8_PRO_CORREGIDO."
@@ -51,7 +58,11 @@ jobs:
           rm -rf _apk/www/.git _apk/www/.github _apk/www/_apk _apk/www/_src _apk/www/*.zip
           # El panel de administrador NO va dentro del APK de los jugadores
           rm -f _apk/www/admin.html _apk/www/reglas_firestore.txt _apk/www/_headers
-          grep -o "APPV = '[^']*'" _apk/www/index.html | head -1 || true
+          APPV=$(grep -o "APPV = '[^']*'" _apk/www/index.html | head -1 | sed "s/APPV = '//; s/'//" || true)
+          APPV=${APPV:-desconocida}
+          echo "VERSIÓN DEL JUEGO EN ESTE APK: $APPV"
+          echo "appv=$APPV" >> "$GITHUB_OUTPUT"
+          { echo "### Versión del juego en este APK: `$APPV`"; echo "Fuente: `$SRC`"; } >> "$GITHUB_STEP_SUMMARY"
           cd _apk
           npm init -y >/dev/null
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
@@ -65,8 +76,21 @@ jobs:
           EOF
           npx cap add android
           npx cap sync android
+          # Número de versión que sube en cada compilación (Android lo necesita para actualizar)
+          sed -i "s/versionCode [0-9][0-9]*/versionCode ${GITHUB_RUN_NUMBER}/; s/versionName \"[^\"]*\"/versionName \"${APPV}\"/" android/app/build.gradle || true
           # Permisos para voz y video
           sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.CAMERA"/><uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/></manifest>#' android/app/src/main/AndroidManifest.xml
+
+      - name: Firma fija (para poder actualizar sin desinstalar)
+        run: |
+          if [ -f debug.keystore ]; then
+            mkdir -p ~/.android && cp debug.keystore ~/.android/debug.keystore
+            echo "Usando debug.keystore del repositorio: el APK se podrá instalar encima de la versión anterior."
+            echo "Firma: debug.keystore del repositorio" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No hay debug.keystore en el repositorio: la firma será nueva y habrá que desinstalar la app vieja antes de instalar."
+            echo "Firma: NUEVA (falta debug.keystore en el repositorio)" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Compilar APK
         working-directory: _apk/android
@@ -76,5 +100,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: billar-8-pro-apk
+          name: billar-8-pro-${{ steps.prep.outputs.appv }}
           path: _apk/android/app/build/outputs/apk/debug/app-debug.apk
