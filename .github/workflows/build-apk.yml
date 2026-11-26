@@ -179,4 +179,3 @@ jobs:
         with:
           name: billar-8-pro-${{ steps.prep.outputs.appv }}
           path: _apk/android/app/build/outputs/apk/debug/app-debug.apk
-
