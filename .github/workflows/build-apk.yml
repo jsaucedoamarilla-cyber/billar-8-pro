@@ -1,0 +1,32 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Compilar APK desde la única fuente
+        run: |
+          set -e
+          bash -n build-apk.sh
+          bash build-apk.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: billar-8-pro-apk
+          path: _out/app-debug.apk
+          if-no-files-found: error
