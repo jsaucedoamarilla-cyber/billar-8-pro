@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BILLAR 8 PRO - compilación del APK. Se ejecuta desde la RAÍZ del repositorio:  bash build-apk.sh
-# Versión del script: v26
+# Versión del script: v27
 SUM="${GITHUB_STEP_SUMMARY:-/dev/null}"
 OUT="${GITHUB_OUTPUT:-/dev/null}"
 
@@ -52,7 +52,7 @@ fi
 
 # ===================== MODO PRINCIPAL =====================
 set -euo pipefail
-{ echo "## Build APK · script v26"; echo; echo "### Archivos en la raíz del repositorio"; ls -1 | sed 's/^/- /'; echo; } >> "$SUM"
+{ echo "## Build APK · script v27"; echo; echo "### Archivos en la raíz del repositorio"; ls -1 | sed 's/^/- /'; echo; } >> "$SUM"
 
 # 1) Descomprimir TODOS los zip del repositorio (incluso zip dentro de zip), sin depender de los nombres
 for nivel in 1 2 3 4; do
@@ -110,6 +110,12 @@ if [ -z "$MOTIVO" ]; then
   NATIVO=1
   if [ -n "$FB_APP_ID" ] && [ -n "$FB_CLIENT_TOKEN" ]; then PROVIDERS='["google.com","facebook.com"]'; FB=1; fi
 fi
+
+# Diagnóstico de estabilidad: desactivar temporalmente el plugin Firebase nativo
+# porque la versión reciente se cierra al arrancar en algunos dispositivos.
+# El APK se compila con Capacitor base; el acceso invitado queda disponible.
+NATIVO=0
+MOTIVO="plugin Firebase nativo desactivado temporalmente para evitar cierre al iniciar"
 
 # 4) Compilar (con login nativo si se puede; si falla, se reintenta sin él para tener SIEMPRE un APK)
 HECHO=0
