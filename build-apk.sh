@@ -92,13 +92,16 @@ try:
     d=json.load(open(f,encoding='utf-8'))
 except Exception:
     print('google-services.json no es un JSON válido (¿se subió incompleto?)'); raise SystemExit
-pk=False; web=False
+pk=False; web=False; android=False
 for c in d.get('client',[]):
     if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.billar8pro.app':
         pk=True
-        if any(o.get('client_type')==3 for o in c.get('oauth_client',[])): web=True
+        for o in c.get('oauth_client',[]):
+            if o.get('client_type')==3: web=True
+            if o.get('client_type')==1: android=True
 if not pk: print('google-services.json no tiene la app com.billar8pro.app (registrala en Firebase y descargalo de nuevo)')
-elif not web: print('google-services.json no trae el cliente web de Google (habilitá Google en Authentication, agregá el SHA-1 y descargalo de nuevo)')
+elif not web: print('falta cliente OAuth web tipo 3: habilitá Google en Firebase Authentication y descargá el JSON actualizado')
+elif not android: print('falta cliente OAuth Android tipo 1: registrá SHA-1 y SHA-256 en Firebase, y descargá el JSON actualizado')
 PY
 )
 leer() { { [ -f facebook.env ] && sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" facebook.env | head -1 | tr -d '\r"'"'"' ' ; } || true; }
@@ -111,11 +114,8 @@ if [ -z "$MOTIVO" ]; then
   if [ -n "$FB_APP_ID" ] && [ -n "$FB_CLIENT_TOKEN" ]; then PROVIDERS='["google.com","facebook.com"]'; FB=1; fi
 fi
 
-# Diagnóstico de estabilidad: desactivar temporalmente el plugin Firebase nativo
-# porque la versión reciente se cierra al arrancar en algunos dispositivos.
-# El APK se compila con Capacitor base; el acceso invitado queda disponible.
-NATIVO=0
-MOTIVO="plugin Firebase nativo desactivado temporalmente para evitar cierre al iniciar"
+# No forzar NATIVO=0: activar el login nativo solamente si la configuración OAuth
+# de Android y Web está completa. Si falta, el APK seguro se compila sin login nativo.
 
 # 4) Compilar (con login nativo si se puede; si falla, se reintenta sin él para tener SIEMPRE un APK)
 HECHO=0
