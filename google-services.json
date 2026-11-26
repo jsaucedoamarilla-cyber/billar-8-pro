@@ -28,9 +28,10 @@
           "other_platform_oauth_client": [
             {
               "client_id": "27907029386-s5r5m55ju4iqf5to752qfvj2g5kjaca1.apps.googleusercontent.com",
-            "client_type": 3
-          }
-        ]
+              "client_type": 3
+            }
+          ]
+        }
       }
     }
   ],
