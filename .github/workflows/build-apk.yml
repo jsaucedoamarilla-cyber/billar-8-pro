@@ -74,16 +74,39 @@ jobs:
 
           cd _apk
           npm init -y >/dev/null
-          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor-firebase/authentication@6 firebase@10
+          npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
 
-          # --- Datos del acceso con Google / Facebook (archivos en la RAÍZ del repositorio) ---
-          FB_APP_ID=""; FB_CLIENT_TOKEN=""
-          if [ -f ../facebook.env ]; then
-            set -a; . ../facebook.env; set +a
-          fi
-          PROVIDERS='["google.com"]'
-          if [ -n "${FB_APP_ID:-}" ] && [ -n "${FB_CLIENT_TOKEN:-}" ]; then PROVIDERS='["google.com","facebook.com"]'; fi
-          cat > capacitor.config.json <<EOF
+          # --- ¿Está bien configurado el acceso NATIVO con Google/Facebook? ---
+          # Si falta algo, el APK se compila SIN el plugin: así la app siempre abre (con el plugin mal configurado Android la cierra al iniciar).
+          MOTIVO=$(python3 - <<'PY'
+          import json,os
+          f='../google-services.json'
+          if not os.path.exists(f):
+              print('falta google-services.json en la raíz del repositorio'); raise SystemExit
+          try:
+              d=json.load(open(f,encoding='utf-8'))
+          except Exception:
+              print('google-services.json no es un JSON válido (¿se subió incompleto?)'); raise SystemExit
+          pk=False; web=False
+          for c in d.get('client',[]):
+              if c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.billar8pro.app':
+                  pk=True
+                  if any(o.get('client_type')==3 for o in c.get('oauth_client',[])): web=True
+          if not pk: print('google-services.json no tiene la app com.billar8pro.app (registrala en Firebase y descargalo de nuevo)')
+          elif not web: print('google-services.json no trae el cliente web de Google (habilitá Google en Authentication, agregá el SHA-1 y descargalo de nuevo)')
+          PY
+          )
+          NATIVO=0; [ -z "$MOTIVO" ] && NATIVO=1
+
+          # facebook.env (opcional), leído sin ejecutarlo para tolerar espacios, comillas y saltos de línea de Windows
+          leer() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" ../facebook.env 2>/dev/null | head -1 | tr -d '\r"'"'"' ' ; }
+          FB_APP_ID=$(leer FB_APP_ID); FB_CLIENT_TOKEN=$(leer FB_CLIENT_TOKEN)
+          PROVIDERS='["google.com"]'; FB=0
+          if [ "$NATIVO" = 1 ] && [ -n "$FB_APP_ID" ] && [ -n "$FB_CLIENT_TOKEN" ]; then PROVIDERS='["google.com","facebook.com"]'; FB=1; fi
+
+          if [ "$NATIVO" = 1 ]; then
+            npm install @capacitor-firebase/authentication@6 firebase@10
+            cat > capacitor.config.json <<EOF
           {
             "appId": "com.billar8pro.app",
             "appName": "Billar 8 Pro",
@@ -92,23 +115,33 @@ jobs:
             "plugins": { "FirebaseAuthentication": { "skipNativeAuth": true, "providers": $PROVIDERS } }
           }
           EOF
+          else
+            cat > capacitor.config.json <<EOF
+          {
+            "appId": "com.billar8pro.app",
+            "appName": "Billar 8 Pro",
+            "webDir": "www",
+            "server": { "androidScheme": "https" }
+          }
+          EOF
+          fi
           npx cap add android
           npx cap sync android
           sed -i "s/versionCode [0-9][0-9]*/versionCode ${GITHUB_RUN_NUMBER}/; s/versionName \"[^\"]*\"/versionName \"${APPV}\"/" android/app/build.gradle
           sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.CAMERA"/><uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/></manifest>#' android/app/src/main/AndroidManifest.xml
 
-          if [ -f ../google-services.json ]; then
+          if [ "$NATIVO" = 1 ]; then
             cp ../google-services.json android/app/google-services.json
-            echo "Google: google-services.json incluido" >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ Login nativo ACTIVADO: Google (google-services.json válido)" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "::warning::Falta google-services.json en la raíz del repositorio: el acceso con Google NO funcionará en el APK"
-            echo "⚠️ Falta google-services.json: Google no funcionará en el APK" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::Login nativo DESACTIVADO: $MOTIVO. El APK se compila sin Google/Facebook (se entra como invitado)."
+            echo "⚠️ Login nativo DESACTIVADO: $MOTIVO. La app abre normal y se entra como invitado." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          if [ "$PROVIDERS" != '["google.com"]' ]; then
-            python3 - <<PY
-          import re
-          app_id="$FB_APP_ID"; token="$FB_CLIENT_TOKEN"
+          if [ "$FB" = 1 ]; then
+            FB_APP_ID="$FB_APP_ID" FB_CLIENT_TOKEN="$FB_CLIENT_TOKEN" python3 - <<'PY'
+          import os
+          app_id=os.environ['FB_APP_ID']; token=os.environ['FB_CLIENT_TOKEN']
           sp='android/app/src/main/res/values/strings.xml'
           t=open(sp,encoding='utf-8').read()
           add=('<string name="facebook_app_id">%s</string>\n'
@@ -123,9 +156,9 @@ jobs:
           m=m.replace('</application>', meta+'</application>')
           open(mp,'w',encoding='utf-8').write(m)
           PY
-            echo "Facebook: configurado (App ID $FB_APP_ID)" >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ Facebook configurado (App ID $FB_APP_ID)" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "⚠️ Falta facebook.env: Facebook no funcionará en el APK (Google sí)" >> "$GITHUB_STEP_SUMMARY"
+            echo "ℹ️ Facebook desactivado (falta facebook.env con FB_APP_ID y FB_CLIENT_TOKEN, o Google no está listo)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Aplicar firma fija
@@ -146,3 +179,4 @@ jobs:
         with:
           name: billar-8-pro-${{ steps.prep.outputs.appv }}
           path: _apk/android/app/build/outputs/apk/debug/app-debug.apk
+
