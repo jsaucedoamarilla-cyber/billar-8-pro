@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BILLAR 8 PRO - compilación del APK. Se ejecuta desde la RAÍZ del repositorio:  bash build-apk.sh
-# Versión del script: v27
+# Versión del script: v28
 SUM="${GITHUB_STEP_SUMMARY:-/dev/null}"
 OUT="${GITHUB_OUTPUT:-/dev/null}"
 
@@ -47,13 +47,31 @@ PY
   mkdir -p ~/.android; cp ../debug.keystore ~/.android/debug.keystore
   cd android
   chmod +x gradlew
-  ./gradlew assembleDebug --no-daemon
+  # Maven Central puede devolver 429 si dos workflows compilan al mismo tiempo.
+  # Reintentar Gradle con espera creciente; cada intento conserva dependencias ya descargadas.
+  COMPILADO=0
+  for intento in 1 2 3 4 5; do
+    echo "Gradle: intento $intento/5"
+    if ./gradlew assembleDebug --no-daemon --max-workers=2; then
+      COMPILADO=1
+      break
+    fi
+    if [ "$intento" -lt 5 ]; then
+      espera=$((intento * 20))
+      echo "Gradle falló (posible limitación temporal de Maven). Esperando $espera segundos antes de reintentar..."
+      sleep "$espera"
+    fi
+  done
+  if [ "$COMPILADO" -ne 1 ]; then
+    echo "No se pudo compilar tras 5 intentos. Revisar errores Gradle/Maven."
+    exit 1
+  fi
   exit 0
 fi
 
 # ===================== MODO PRINCIPAL =====================
 set -euo pipefail
-{ echo "## Build APK · script v27"; echo; echo "### Archivos en la raíz del repositorio"; ls -1 | sed 's/^/- /'; echo; } >> "$SUM"
+{ echo "## Build APK · script v28"; echo; echo "### Archivos en la raíz del repositorio"; ls -1 | sed 's/^/- /'; echo; } >> "$SUM"
 
 # 1) Descomprimir TODOS los zip del repositorio (incluso zip dentro de zip), sin depender de los nombres
 for nivel in 1 2 3 4; do
