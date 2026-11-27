@@ -109,8 +109,10 @@ export FB_APP_ID FB_CLIENT_TOKEN
 FB_APP_ID=$(leer FB_APP_ID); FB_CLIENT_TOKEN=$(leer FB_CLIENT_TOKEN)
 export PROVIDERS='["google.com"]' FB=0
 NATIVO=0
+# PRUEBA DE ESTABILIDAD: desactivar el plugin Firebase nativo para comprobar
+# si es el causante del cierre al abrir. El inicio web/como invitado queda disponible.
 if [ -z "$MOTIVO" ]; then
-  NATIVO=1
+  NATIVO=0
   if [ -n "$FB_APP_ID" ] && [ -n "$FB_CLIENT_TOKEN" ]; then PROVIDERS='["google.com","facebook.com"]'; FB=1; fi
 fi
 
