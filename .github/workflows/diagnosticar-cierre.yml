@@ -2,6 +2,12 @@ name: Diagnosticar cierre del APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnosticar-cierre.yml'
+      - 'build-apk.sh'
+      - 'google-services.json'
 
 permissions:
   contents: read
