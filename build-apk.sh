@@ -25,7 +25,8 @@ if [ "${1:-}" = "--armar" ]; then
   sed -i 's#</manifest>#<uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.CAMERA"/><uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/></manifest>#' android/app/src/main/AndroidManifest.xml
   if [ "$NAT" = 1 ]; then
     cp ../google-services.json android/app/google-services.json
-    if [ "$FB" = 1 ]; then
+    if [ "$FB" != 1 ]; then FB_APP_ID="000000000000000"; FB_CLIENT_TOKEN="00000000000000000000000000000000"; fi
+    if true; then
       FB_APP_ID="$FB_APP_ID" FB_CLIENT_TOKEN="$FB_CLIENT_TOKEN" python3 - <<'PY'
 import os
 app_id=os.environ['FB_APP_ID']; token=os.environ['FB_CLIENT_TOKEN']
