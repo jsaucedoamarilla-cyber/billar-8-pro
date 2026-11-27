@@ -12,6 +12,8 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_I_WANT_MY_TCG: "yes"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,7 +34,6 @@ jobs:
 
       - name: Instalar y abrir en emulador Android, recoger logcat
         id: emulator-test
-        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -56,9 +57,20 @@ jobs:
             LAUNCH_EXIT=$?
             echo "LAUNCH_SENT=$LAUNCH_EXIT" | tee -a diagnostico.txt
             sleep 25
+            PID=$(adb shell pidof com.billar8pro.app | tr -d '\r' || true)
+            echo "APP_PID=$PID" | tee -a diagnostico.txt
+            if [ -z "$PID" ]; then
+              echo "ERROR: App no quedó ejecutándose tras abrir." | tee -a diagnostico.txt
+              adb logcat -d -v time > logcat.txt
+              exit 1
+            fi
             adb logcat -d -v time > logcat.txt
             echo "=== FATAL EXCEPTION ===" >> diagnostico.txt
             awk '/FATAL EXCEPTION/{show=1;lines=0} show{print;lines++;if(lines>=100)show=0}' logcat.txt >> diagnostico.txt
+            if grep -q "FATAL EXCEPTION" logcat.txt; then
+              echo "ERROR: FATAL EXCEPTION detectado al iniciar." >> diagnostico.txt
+              exit 1
+            fi
             if ! grep -q "FATAL EXCEPTION" logcat.txt; then
               echo "No se detectó FATAL EXCEPTION en logcat." >> diagnostico.txt
               grep -E "AndroidRuntime|com.billar8pro.app|Firebase|Capacitor" logcat.txt | tail -120 >> diagnostico.txt
@@ -68,12 +80,6 @@ jobs:
               echo "## Diagnóstico de arranque Android"
               cat diagnostico.txt
             } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Registrar si el emulador no arrancó
-        if: steps.emulator-test.outcome == 'failure'
-        run: |
-          echo "La compilación fue exitosa, pero el emulador falló o no arrancó. No se pudo confirmar el comportamiento de la app." | tee -a diagnostico.txt
-          echo "La prueba de emulador terminó con error. Revisar logs del paso anterior." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Guardar logcat y diagnóstico
         if: always()
