@@ -24,40 +24,60 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+
       - name: Compilar APK con Firebase nativo activado
         run: |
           set -e
           bash -n build-apk.sh
           bash build-apk.sh
           test -f _out/app-debug.apk
+          echo "APK compilado correctamente." | tee diagnostico.txt
+
       - name: Instalar y abrir en emulador Android, recoger logcat
+        id: emulator-test
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_2
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          disable-animations: true
+          boot-timeout: 900
           script: |
             set +e
             adb install -r _out/app-debug.apk
-            echo "INSTALL_EXIT=$?" | tee diagnostico.txt
+            INSTALL_EXIT=$?
+            echo "INSTALL_EXIT=$INSTALL_EXIT" | tee diagnostico.txt
+            if [ "$INSTALL_EXIT" -ne 0 ]; then
+              adb logcat -d -v time > logcat.txt
+              exit 1
+            fi
             adb logcat -c
             adb shell monkey -p com.billar8pro.app -c android.intent.category.LAUNCHER 1
-            echo "LAUNCH_SENT=$?" | tee -a diagnostico.txt
+            LAUNCH_EXIT=$?
+            echo "LAUNCH_SENT=$LAUNCH_EXIT" | tee -a diagnostico.txt
             sleep 25
             adb logcat -d -v time > logcat.txt
             echo "=== FATAL EXCEPTION ===" >> diagnostico.txt
             awk '/FATAL EXCEPTION/{show=1;lines=0} show{print;lines++;if(lines>=100)show=0}' logcat.txt >> diagnostico.txt
             if ! grep -q "FATAL EXCEPTION" logcat.txt; then
-              echo "No se detectó FATAL EXCEPTION en el logcat capturado." >> diagnostico.txt
+              echo "No se detectó FATAL EXCEPTION en logcat." >> diagnostico.txt
               grep -E "AndroidRuntime|com.billar8pro.app|Firebase|Capacitor" logcat.txt | tail -120 >> diagnostico.txt
             fi
             cat diagnostico.txt
             {
               echo "## Diagnóstico de arranque Android"
-              echo "Resumen del log:"
               cat diagnostico.txt
             } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Registrar si el emulador no arrancó
+        if: steps.emulator-test.outcome == 'failure'
+        run: |
+          echo "La compilación fue exitosa, pero el emulador falló o no arrancó. No se pudo confirmar el comportamiento de la app." | tee -a diagnostico.txt
+          echo "La prueba de emulador terminó con error. Revisar logs del paso anterior." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Guardar logcat y diagnóstico
         if: always()
         uses: actions/upload-artifact@v4
@@ -67,8 +87,9 @@ jobs:
             logcat.txt
             diagnostico.txt
           if-no-files-found: warn
-      - name: Guardar APK de prueba
-        if: success()
+
+      - name: Guardar APK compilado para prueba manual
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: billar-8-pro-diagnostico-native
