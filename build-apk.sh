@@ -127,11 +127,9 @@ leer() { { [ -f facebook.env ] && sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space
 export FB_APP_ID FB_CLIENT_TOKEN
 FB_APP_ID=$(leer FB_APP_ID); FB_CLIENT_TOKEN=$(leer FB_CLIENT_TOKEN)
 export PROVIDERS='["google.com"]' FB=0
-NATIVO=1
-if [ -z "$MOTIVO" ]; then
-  NATIVO=1
-  if [ -n "$FB_APP_ID" ] && [ -n "$FB_CLIENT_TOKEN" ]; then PROVIDERS='["google.com","facebook.com"]'; FB=1; fi
-fi
+# Desactivar login Firebase nativo para aislar el cierre al arrancar.
+# El login web/invitado queda disponible; no cargar el plugin nativo.
+NATIVO=0
 
 
 # 4) Compilar (con login nativo si se puede; si falla, se reintenta sin él para tener SIEMPRE un APK)
